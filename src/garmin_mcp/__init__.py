@@ -275,8 +275,26 @@ def init_api(email, password):
     return garmin
 
 
+def _restore_tokens_from_env():
+    """If GARMIN_TOKENS_B64 is set, unpack the saved token folder so the
+    server can log in without a terminal (needed when hosted on Railway)."""
+    import io
+    import tarfile
+
+    blob = os.environ.get("GARMIN_TOKENS_B64")
+    if not blob:
+        return
+    raw = base64.b64decode(blob)
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
+        tar.extractall(path=os.path.expanduser("~"))
+    print("Restored Garmin tokens from GARMIN_TOKENS_B64.", file=sys.stderr)
+
+
 def main():
     """Initialize the MCP server and register all tools"""
+
+    # Make saved tokens available when running on a host like Railway
+    _restore_tokens_from_env()
 
     # Initialize Garmin client
     garmin_client = init_api(email, password)
