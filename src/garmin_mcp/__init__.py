@@ -304,7 +304,15 @@ def main():
     activity_analysis.configure(garmin_client)
 
     # Create the MCP app, wrapped so the env-var filter can drop tools
-    app = _ToolFilter(FastMCP("Garmin Connect v1.0"), enabled_tools, disabled_tools)
+    app = _ToolFilter(
+        FastMCP(
+            "Garmin Connect v1.0",
+            host="0.0.0.0",
+            port=int(os.environ.get("PORT", 8000)),
+        ),
+        enabled_tools,
+        disabled_tools,
+    )
     if enabled_tools:
         print(f"Tool filter: allowlist of {len(enabled_tools)} tool(s).", file=sys.stderr)
     elif disabled_tools:
@@ -339,7 +347,8 @@ def main():
         )
 
     # Run the MCP server
-    app.run()
+    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+    app.run(transport=transport)
 
 
 if __name__ == "__main__":
