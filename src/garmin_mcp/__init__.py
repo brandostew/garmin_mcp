@@ -321,16 +321,34 @@ def main():
     courses.configure(garmin_client)
     activity_analysis.configure(garmin_client)
 
+    # Build the server settings, adding the OAuth "door" only when configured
+    from garmin_mcp import auth_server
+
+    fastmcp_kwargs = {
+        "host": "0.0.0.0",
+        "port": int(os.environ.get("PORT", 8000)),
+    }
+    if auth_server.AUTH_ENABLED:
+        from mcp.server.auth.settings import AuthSettings
+        from pydantic import AnyHttpUrl
+
+        fastmcp_kwargs["token_verifier"] = auth_server.JwtTokenVerifier()
+        fastmcp_kwargs["auth"] = AuthSettings(
+            issuer_url=AnyHttpUrl(auth_server.PUBLIC_URL),
+            resource_server_url=AnyHttpUrl(auth_server.PUBLIC_URL),
+            required_scopes=[],
+        )
+
     # Create the MCP app, wrapped so the env-var filter can drop tools
     app = _ToolFilter(
-        FastMCP(
-            "Garmin Connect v1.0",
-            host="0.0.0.0",
-            port=int(os.environ.get("PORT", 8000)),
-        ),
+        FastMCP("Garmin Connect v1.0", **fastmcp_kwargs),
         enabled_tools,
         disabled_tools,
     )
+    if auth_server.AUTH_ENABLED:
+        auth_server.install_oauth_routes(app)
+        print("OAuth gate enabled.", file=sys.stderr)
+        
     if enabled_tools:
         print(f"Tool filter: allowlist of {len(enabled_tools)} tool(s).", file=sys.stderr)
     elif disabled_tools:

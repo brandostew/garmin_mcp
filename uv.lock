@@ -336,6 +336,7 @@ dependencies = [
     { name = "fitparse" },
     { name = "garminconnect" },
     { name = "mcp" },
+    { name = "pyjwt" },
     { name = "python-dotenv" },
     { name = "requests" },
 ]
@@ -353,6 +354,7 @@ requires-dist = [
     { name = "fitparse", specifier = ">=1.2.0" },
     { name = "garminconnect", specifier = "==0.3.2" },
     { name = "mcp", specifier = ">=1.23.0" },
+    { name = "pyjwt", specifier = ">=2.8.0" },
     { name = "python-dotenv", specifier = "==1.2.2" },
     { name = "requests", specifier = "==2.33.0" },
 ]
