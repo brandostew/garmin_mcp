@@ -28,6 +28,7 @@ from garmin_mcp import nutrition
 from garmin_mcp import workout_builders
 from garmin_mcp import courses
 from garmin_mcp import activity_analysis
+from garmin_mcp import cronometer_tools
 
 
 def is_interactive_terminal() -> bool:
@@ -321,6 +322,11 @@ def main():
     courses.configure(garmin_client)
     activity_analysis.configure(garmin_client)
 
+    # Initialize and configure the Cronometer client (optional -- skips
+    # cleanly if credentials aren't set, so Garmin still works on its own)
+    cronometer_client = cronometer_tools.init_client()
+    cronometer_tools.configure(cronometer_client)
+
     # Build the server settings, adding the OAuth "door" only when configured
     from garmin_mcp import auth_server
 
@@ -348,7 +354,6 @@ def main():
     if auth_server.AUTH_ENABLED:
         auth_server.install_oauth_routes(app)
         print("OAuth gate enabled.", file=sys.stderr)
-        
     if enabled_tools:
         print(f"Tool filter: allowlist of {len(enabled_tools)} tool(s).", file=sys.stderr)
     elif disabled_tools:
@@ -370,6 +375,7 @@ def main():
     app = workout_builders.register_tools(app)
     app = courses.register_tools(app)
     app = activity_analysis.register_tools(app)
+    app = cronometer_tools.register_tools(app)
 
     # Register resources (workout templates)
     app = workout_templates.register_resources(app)

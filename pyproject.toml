@@ -7,10 +7,12 @@ name = "garmin-mcp"
 version = "0.1.0"
 description = "MCP server to access Garmin data"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 dependencies = [
     "python-dotenv==1.2.2",
     "garminconnect==0.3.2",
+    "cronometer-api-mcp>=0.1.4",
+    "httpcore>=1.0.9",
     "requests==2.33.0",
     "mcp>=1.23.0",
     "pyjwt>=2.8.0",
