@@ -12,6 +12,7 @@ dependencies = [
     "python-dotenv==1.2.2",
     "garminconnect==0.3.2",
     "cronometer-api-mcp>=0.1.4",
+    "cronometer-mcp>=2.0.3",
     "httpcore>=1.0.9",
     "requests==2.33.0",
     "mcp>=1.23.0",
