@@ -121,6 +121,19 @@ wheels = [
 ]
 
 [[package]]
+name = "cronometer-mcp"
+version = "2.0.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mcp" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3e/43/55d3a7c41046c5fc03e35234cc8b42b403d51f68ee24c456c352f373e776/cronometer_mcp-2.0.3.tar.gz", hash = "sha256:5c7bbc362d02a3d88f41519da68d3df214b4ccfc52250e2719e13d067f19faba", size = 51612, upload-time = "2026-03-08T17:29:42.131Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/87/4a7e424454b4d4d3dfb04e5791b90c50d02c6382859a631a9e2ee3a7739a/cronometer_mcp-2.0.3-py3-none-any.whl", hash = "sha256:39243a0abe9f7b24473ea6347b246ba9e62a4c323bfd128ea934b7064ecf2cc2", size = 36980, upload-time = "2026-03-08T17:29:41.029Z" },
+]
+
+[[package]]
 name = "cryptography"
 version = "48.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -218,6 +231,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cronometer-api-mcp" },
+    { name = "cronometer-mcp" },
     { name = "fitparse" },
     { name = "garminconnect" },
     { name = "httpcore" },
@@ -238,10 +252,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cronometer-api-mcp", specifier = ">=0.1.4" },
+    { name = "cronometer-mcp", specifier = ">=2.0.3" },
     { name = "fitparse", specifier = ">=1.2.0" },
     { name = "garminconnect", specifier = "==0.3.2" },
     { name = "httpcore", specifier = ">=1.0.9" },
-    { name = "mcp", specifier = ">=1.23.0" },
+    { name = "mcp", specifier = ">=1.23.0,<2.0.0" },
     { name = "pyjwt", specifier = ">=2.8.0" },
     { name = "python-dotenv", specifier = "==1.2.2" },
     { name = "requests", specifier = "==2.33.0" },

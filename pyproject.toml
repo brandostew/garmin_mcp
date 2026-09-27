@@ -15,7 +15,7 @@ dependencies = [
     "cronometer-mcp>=2.0.3",
     "httpcore>=1.0.9",
     "requests==2.33.0",
-    "mcp>=1.23.0",
+     "mcp>=1.23.0,<2.0.0",
     "pyjwt>=2.8.0",
     "fitparse>=1.2.0",
 ]
