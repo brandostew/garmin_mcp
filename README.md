@@ -2,7 +2,7 @@
 
 # Garmin MCP Server
 
-This Model Context Protocol (MCP) server connects to Garmin Connect and exposes your fitness and health data to Claude and other MCP-compatible clients.
+This Model Context Protocol (MCP) server connects to Garmin Connect and exposes your fitness and health data to ChatGPT, Claude, and other MCP-compatible clients.
 
 Garmin's API is accessed via the awesome [python-garminconnect](https://github.com/cyberjunky/python-garminconnect) library.
 
@@ -98,6 +98,48 @@ Example — expose only sleep, stress, and recent activities:
   "GARMIN_ENABLED_TOOLS": "get_sleep_data,get_stress_summary,get_activities"
 }
 ```
+
+## Hosted MCP for ChatGPT
+
+ChatGPT connects to a remote Streamable HTTP endpoint. Deploy the server at a
+public HTTPS address and configure these environment variables on the host:
+
+| Env var | Example / purpose |
+|---|---|
+| `MCP_TRANSPORT` | `streamable-http` |
+| `PUBLIC_URL` | Public origin only, such as `https://garmin.example.com` (no `/mcp`) |
+| `OWNER_PASSWORD` | Private password entered on the OAuth approval page |
+| `JWT_SECRET` | A long random signing secret; do not reuse `OWNER_PASSWORD` |
+| `GARMIN_TOKENS_B64` | Base64 Garmin token archive used by the existing hosted setup |
+
+The connector endpoint is `PUBLIC_URL` plus `/mcp`, for example:
+
+```text
+https://garmin.example.com/mcp
+```
+
+The hosted server supports OAuth 2.1 discovery, dynamic client registration,
+PKCE S256, refresh tokens (`offline_access`), resource-bound access tokens, and
+exact callback matching. Tool definitions also advertise conservative read,
+write, and destructive-action hints so ChatGPT can apply confirmation controls.
+
+To add it in ChatGPT:
+
+1. Enable developer mode in **Settings → Apps → Advanced settings** (availability depends on your ChatGPT plan and workspace role).
+2. Choose **Apps → Create**, provide a name such as `Garmin`, and enter the full `/mcp` endpoint.
+3. Select OAuth, then choose **Scan tools**.
+4. Enter `OWNER_PASSWORD` on the Garmin approval page and finish creating the draft app.
+5. Test the draft app in a new chat before publishing it to a workspace.
+
+For a lower-risk first connection, set `GARMIN_ENABLED_TOOLS` to a small
+read-only set such as:
+
+```text
+get_activities,get_activity,get_sleep_data,get_stress_summary,get_training_readiness,get_body_battery,get_heart_rates_summary,get_hrv_data,get_training_status,get_user_profile
+```
+
+Changing OAuth configuration invalidates older hosted OAuth sessions. Existing
+clients may need to disconnect and authorize again after an upgrade.
 
 ## High-level workout tools
 

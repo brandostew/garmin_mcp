@@ -8,6 +8,7 @@ import base64
 
 import requests
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from garminconnect import Garmin, GarminConnectAuthenticationError, GarminConnectConnectionError, GarminConnectTooManyRequestsError
 
@@ -126,7 +127,6 @@ class _ToolFilter:
         return name not in self._disabled
 
     def tool(self, *args, **kwargs):
-        decorator = self._app.tool(*args, **kwargs)
         # Prefer the explicit registered name if given (@app.tool(name="x")),
         # so the env-var filter matches what the user actually configures.
         explicit = kwargs.get("name") or (
@@ -137,7 +137,9 @@ class _ToolFilter:
             name = explicit or getattr(fn, "__name__", "")
             self._seen.add(name.lower())
             if self._allowed(name):
-                return decorator(fn)
+                tool_kwargs = dict(kwargs)
+                tool_kwargs.setdefault("annotations", _tool_annotations(name))
+                return self._app.tool(*args, **tool_kwargs)(fn)
             return fn  # skip registration; tool never reaches the LLM
 
         return wrapper
@@ -150,6 +152,27 @@ class _ToolFilter:
     def __getattr__(self, item):
         return getattr(self._app, item)
 # ---------------------------------------------------------------------------
+
+
+_READ_ONLY_TOOL_PREFIXES = ("get_", "count_", "search_")
+_DESTRUCTIVE_TOOL_PREFIXES = ("delete_", "remove_", "unschedule_")
+
+
+def _tool_annotations(name: str) -> ToolAnnotations:
+    """Generate conservative MCP safety hints for every registered tool.
+
+    Unknown verbs are treated as writes, so a newly added mutation can never be
+    accidentally advertised to clients as read-only.
+    """
+    normalized = name.lower()
+    read_only = normalized.startswith(_READ_ONLY_TOOL_PREFIXES)
+    destructive = not read_only and normalized.startswith(_DESTRUCTIVE_TOOL_PREFIXES)
+    return ToolAnnotations(
+        readOnlyHint=read_only,
+        destructiveHint=destructive,
+        idempotentHint=False,
+        openWorldHint=False,
+    )
 
 
 def init_api(email, password):
@@ -343,9 +366,9 @@ def main():
 
         fastmcp_kwargs["token_verifier"] = auth_server.JwtTokenVerifier()
         fastmcp_kwargs["auth"] = AuthSettings(
-            issuer_url=AnyHttpUrl(auth_server.PUBLIC_URL),
-            resource_server_url=AnyHttpUrl(auth_server.PUBLIC_URL),
-            required_scopes=[],
+            issuer_url=AnyHttpUrl(auth_server.issuer_url()),
+            resource_server_url=AnyHttpUrl(auth_server.resource_url()),
+            required_scopes=[auth_server.SUPPORTED_SCOPE],
         )
 
     # Create the MCP app, wrapped so the env-var filter can drop tools
