@@ -29,8 +29,23 @@ data to Claude. Built from scratch with a hand-rolled OAuth 2.1 gate.
 - `OWNER_PASSWORD` — password used to connect Claude via OAuth login page
 - `JWT_SECRET` — random string used to sign OAuth tokens
 - `GARMIN_DISABLED_TOOLS` — comma-separated denylist of write/delete tools
+- `CRONOMETER_DATA_DIR` — `/root/.local/share/cronometer-mcp` (points GWT session cookies at the Volume)
 
 ## Healthy Startup Log (all 4 lines required)
+```
+Restored Garmin tokens from GARMIN_TOKENS_B64.
+Garmin Connect client initialized successfully.
+Cronometer client initialized successfully.
+Cronometer GWT client (macro tools) initialized successfully.
+```
+Also expected on Railway (not counted above):
+```
+OAuth gate enabled.
+Tool filter: denylist of N tool(s).
+```
+- Missing `OAuth gate enabled.` → one of `PUBLIC_URL`, `OWNER_PASSWORD`, `JWT_SECRET` is unset, so the server is running **without auth**. Fix immediately.
+- `Cronometer GWT login failed: ...` → see failure mode #2.
+- `Tool filter: warning — name(s) not found and ignored: ...` → typo in `GARMIN_DISABLED_TOOLS`.
 
 
 ## Known Failure Modes & Fixes
@@ -66,14 +81,22 @@ rm -f /root/.local/share/cronometer-mcp/.session_cookies
 **Fix:** Ensure `pyproject.toml` has `"mcp>=1.23.0,<2.0.0"` — this is already pinned.
 If it breaks again, check that the pin is still in place and run `uv sync`.
 
-### 4. Cronometer OAuth token expired (Claude connector)
+### 4. Claude connector OAuth token expired
 **Symptom:** Claude shows "Connect to Garmin" login page
-**Fix:** Enter OWNER_PASSWORD on the login page and click Authorize.
+**Fix:** Enter OWNER_PASSWORD on the login page and click Authorize. If no login
+page appears, disconnect and reconnect the connector in claude.ai → Settings → Connectors.
 **Frequency:** Every 30 days
 
 ### 5. Everything down at once
 Usually means the Garmin token expired AND triggered a cascade. Fix Garmin token
 first (failure mode #1), then check if Cronometer GWT also needs a reset (#2).
+
+## Recurring Maintenance
+| Every | What expires | Fix |
+|---|---|---|
+| ~6 months | Garmin token | Failure mode #1 |
+| 1–2 weeks | Cronometer GWT session | Failure mode #2 |
+| 30 days | Claude connector OAuth token | Failure mode #4 |
 
 ## Connecting Claude
 - Connector URL: `https://garminmcp-production-3976.up.railway.app/mcp`
@@ -88,3 +111,23 @@ first (failure mode #1), then check if Cronometer GWT also needs a reset (#2).
 - `mcp>=1.23.0,<2.0.0` — MUST stay pinned below v2 (v2 renamed FastMCP)
 - `pyjwt` — JWT signing for OAuth tokens
 - `httpcore>=1.0.9` — pinned to fix Python 3.14 compatibility bug
+
+## Build History
+1. **Garmin local setup** — `uv` + `garmin-mcp-auth`, added to Claude Desktop via `claude_desktop_config.json`.
+2. **Railway hosting** — forked `Taxuspt/garmin_mcp`; `MCP_TRANSPORT` env var (defaults to `stdio` so desktop still works);
+   `_restore_tokens_from_env()` unpacks `GARMIN_TOKENS_B64` for headless login; `python:3.14-slim` Dockerfile; Volume added.
+3. **OAuth 2.1 gate** (`auth_server.py`) — discovery, dynamic client registration, login page, PKCE S256 token exchange,
+   refresh tokens, `JwtTokenVerifier`. `AUTH_ENABLED` only when `PUBLIC_URL`, `OWNER_PASSWORD`, `JWT_SECRET` are all set.
+4. **Cronometer mobile API tools** (`cronometer_tools.py`, `rwestergren/cronometer-api-mcp`) — diary, nutrients, targets,
+   scores, food search/details, macro schedules/templates, fasting; writes: add serving, copy day, custom food, mark day complete.
+   `delete_cronometer_entries` is set to **Never** in the Claude connector's per-tool permissions.
+5. **Cronometer GWT macro tools** (`cronometer_gwt_tools.py`, `cphoskins/cronometer-mcp`) — read daily targets, templates,
+   weekly schedule; write one-off daily targets, save/delete named templates, assign weekly schedule.
+   Cookies persist on the Volume via `CRONOMETER_DATA_DIR`.
+6. **mcp pin** — mcp v2 renamed `FastMCP` → `MCPServer`; pinned `mcp>=1.23.0,<2.0.0`.
+7. **This playbook** (`CLAUDE.md`).
+
+## Planned
+- InBody scale integration (read-only, `rwestergren/inbody-api-mcp`)
+- Browser-based Garmin token refresh (removes the 6-month manual step)
+- Auto-reauthentication for the Cronometer GWT session
