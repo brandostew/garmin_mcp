@@ -181,8 +181,9 @@ def init_api(email, password):
         finally:
             sys.stderr = old_stderr
 
-    except (FileNotFoundError, GarminConnectConnectionError, GarminConnectTooManyRequestsError, GarminConnectAuthenticationError):
+    except (FileNotFoundError, GarminConnectConnectionError, GarminConnectTooManyRequestsError, GarminConnectAuthenticationError) as e:
         # Session is expired. You'll need to log in again
+        print(f"Garmin token login failed: {type(e).__name__}: {e}", file=sys.stderr)
 
         # Check if we're in a non-interactive environment without credentials
         if not is_interactive_terminal() and (not email or not password):
@@ -300,28 +301,36 @@ def main():
 
     # Initialize Garmin client
     garmin_client = init_api(email, password)
-    if not garmin_client:
-        print("Failed to initialize Garmin Connect client. Exiting.", file=sys.stderr)
-        return
-
-    print("Garmin Connect client initialized successfully.", file=sys.stderr)
-
-    # Configure all modules with the Garmin client
-    activity_management.configure(garmin_client)
-    health_wellness.configure(garmin_client)
-    user_profile.configure(garmin_client)
-    devices.configure(garmin_client)
-    gear_management.configure(garmin_client)
-    weight_management.configure(garmin_client)
-    challenges.configure(garmin_client)
-    training.configure(garmin_client)
-    workouts.configure(garmin_client)
-    data_management.configure(garmin_client)
-    womens_health.configure(garmin_client)
-    nutrition.configure(garmin_client)
-    workout_builders.configure(garmin_client)
-    courses.configure(garmin_client)
-    activity_analysis.configure(garmin_client)
+    garmin_modules = [
+        activity_management,
+        health_wellness,
+        user_profile,
+        devices,
+        gear_management,
+        weight_management,
+        challenges,
+        training,
+        workouts,
+        data_management,
+        womens_health,
+        nutrition,
+        workout_builders,
+        courses,
+        activity_analysis,
+    ]
+    if garmin_client:
+        print("Garmin Connect client initialized successfully.", file=sys.stderr)
+        # Configure all modules with the Garmin client
+        for module in garmin_modules:
+            module.configure(garmin_client)
+    else:
+        # Keep running so Cronometer tools still work; Garmin tools are skipped
+        print(
+            "Failed to initialize Garmin Connect client. Garmin tools disabled "
+            "(Cronometer tools still available).",
+            file=sys.stderr,
+        )
+        garmin_modules = []
 
     # Initialize and configure the Cronometer client (optional -- skips
     # cleanly if credentials aren't set, so Garmin still works on its own)
@@ -363,21 +372,8 @@ def main():
         print(f"Tool filter: denylist of {len(disabled_tools)} tool(s).", file=sys.stderr)
 
     # Register tools from all modules
-    app = activity_management.register_tools(app)
-    app = health_wellness.register_tools(app)
-    app = user_profile.register_tools(app)
-    app = devices.register_tools(app)
-    app = gear_management.register_tools(app)
-    app = weight_management.register_tools(app)
-    app = challenges.register_tools(app)
-    app = training.register_tools(app)
-    app = workouts.register_tools(app)
-    app = data_management.register_tools(app)
-    app = womens_health.register_tools(app)
-    app = nutrition.register_tools(app)
-    app = workout_builders.register_tools(app)
-    app = courses.register_tools(app)
-    app = activity_analysis.register_tools(app)
+    for module in garmin_modules:
+        app = module.register_tools(app)
     app = cronometer_tools.register_tools(app)
     app = cronometer_gwt_tools.register_tools(app)
 
@@ -386,7 +382,7 @@ def main():
 
     # Warn about filter entries that matched no tool (most likely typos)
     unknown = app.unknown_filter_names()
-    if unknown:
+    if unknown and garmin_client:
         print(
             f"Tool filter: warning — name(s) not found and ignored: {', '.join(unknown)}",
             file=sys.stderr,

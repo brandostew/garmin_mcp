@@ -51,7 +51,11 @@ Tool filter: denylist of N tool(s).
 ## Known Failure Modes & Fixes
 
 ### 1. Garmin token expired
-**Symptom:** `ERROR: OAuth tokens not found and no interactive terminal available`
+**Symptom:** `ERROR: OAuth tokens not found and no interactive terminal available`, followed by
+`Garmin tools disabled (Cronometer tools still available)`. The server stays up, but no Garmin tools show in Claude.
+The `Garmin token login failed: ...` line just above shows the underlying reason.
+**Note:** any redeploy (including a docs-only push to `main`) re-reads `GARMIN_TOKENS_B64`. A running container
+can keep working on refreshed tokens long after the env var blob has gone stale, so a redeploy can surface this.
 **Fix:**
 ```bash
 # Step 1 — re-authenticate on Mac
