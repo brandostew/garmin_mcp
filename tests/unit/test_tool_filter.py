@@ -8,6 +8,7 @@ class FakeApp:
 
     def __init__(self):
         self.registered = []
+        self.tool_kwargs = []
 
     def tool(self, *args, **kwargs):
         explicit = kwargs.get("name") or (
@@ -16,6 +17,7 @@ class FakeApp:
 
         def decorator(fn):
             self.registered.append(explicit or fn.__name__)
+            self.tool_kwargs.append(kwargs)
             return fn
 
         return decorator
@@ -93,3 +95,45 @@ def test_passthrough_to_wrapped_app():
     app = FakeApp()
     filt = _ToolFilter(app, set(), set())
     assert filt.run() == "ran"
+
+
+def test_read_tools_receive_safe_annotations():
+    app = FakeApp()
+    filt = _ToolFilter(app, set(), set())
+    _register(filt, ["get_sleep_data"])
+    annotations = app.tool_kwargs[0]["annotations"]
+    assert annotations.readOnlyHint is True
+    assert annotations.destructiveHint is False
+    assert annotations.openWorldHint is False
+
+
+def test_delete_tools_receive_destructive_annotations():
+    app = FakeApp()
+    filt = _ToolFilter(app, set(), set())
+    _register(filt, ["delete_workout"])
+    annotations = app.tool_kwargs[0]["annotations"]
+    assert annotations.readOnlyHint is False
+    assert annotations.destructiveHint is True
+
+
+def test_unknown_tool_verbs_default_to_write():
+    app = FakeApp()
+    filt = _ToolFilter(app, set(), set())
+    _register(filt, ["publish_something_new"])
+    annotations = app.tool_kwargs[0]["annotations"]
+    assert annotations.readOnlyHint is False
+    assert annotations.destructiveHint is False
+
+
+def test_explicit_annotations_are_preserved():
+    from mcp.types import ToolAnnotations
+
+    app = FakeApp()
+    filt = _ToolFilter(app, set(), set())
+
+    def fn():
+        return None
+
+    supplied = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
+    filt.tool(annotations=supplied)(fn)
+    assert app.tool_kwargs[0]["annotations"] is supplied
