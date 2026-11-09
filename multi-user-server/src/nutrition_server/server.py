@@ -9,6 +9,9 @@ Rules every tool follows (see section 2 of the brief):
 import logging
 import os
 from contextlib import contextmanager
+from datetime import date
+
+from pydantic import BaseModel, Field
 
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -16,6 +19,12 @@ from nutrition_server import db
 from nutrition_server.auth import KeyAuthMiddleware, current_user
 
 log = logging.getLogger("nutrition_server")
+
+
+class TrainingSession(BaseModel):
+    day: str = Field(description="Day of the week, e.g. 'Monday'")
+    name: str = Field(description="Short name, e.g. 'Long run' or 'Upper body'")
+    details: str = Field(default="", description="Anything else: distance, intensity, notes")
 
 
 @contextmanager
@@ -42,6 +51,48 @@ def build_mcp() -> FastMCP:
         """Return the display name of the person this connector belongs to."""
         with audited(ctx, "whoami") as user:
             return user.display_name
+
+    @mcp.tool()
+    def get_profile(ctx: Context) -> dict:
+        """Get your food likes, dislikes, dietary notes and goals."""
+        with audited(ctx, "get_profile") as user, db.open_session() as s:
+            return db.get_profile(s, user.id)
+
+    @mcp.tool()
+    def update_profile(
+        ctx: Context,
+        likes: str | None = None,
+        dislikes: str | None = None,
+        dietary_notes: str | None = None,
+        goals: str | None = None,
+    ) -> dict:
+        """Update your food profile. Only the fields you pass are changed;
+        each one replaces the old text. Returns the full profile."""
+        changes = {"likes": likes, "dislikes": dislikes,
+                   "dietary_notes": dietary_notes, "goals": goals}
+        with audited(ctx, "update_profile") as user, db.open_session() as s:
+            return db.update_profile(s, user.id, changes)
+
+    @mcp.tool()
+    def save_training_week(
+        ctx: Context, week_start: str, sessions: list[TrainingSession]
+    ) -> str:
+        """Save your training plan for the week starting on week_start
+        (YYYY-MM-DD). Replaces anything already saved for that week."""
+        with audited(ctx, "save_training_week") as user, db.open_session() as s:
+            start = date.fromisoformat(week_start)
+            db.save_training_week(s, user.id, start, [x.model_dump() for x in sessions])
+            return f"Saved {len(sessions)} session(s) for the week of {start.isoformat()}."
+
+    @mcp.tool()
+    def get_training_week(ctx: Context, week_start: str | None = None) -> dict:
+        """Get your training plan for the week starting on week_start
+        (YYYY-MM-DD), or your most recently saved week if not given."""
+        with audited(ctx, "get_training_week") as user, db.open_session() as s:
+            start = date.fromisoformat(week_start) if week_start else None
+            week = db.get_training_week(s, user.id, start)
+            return week or {"week_start": None, "sessions": [],
+                            "note": "No training week saved yet."}
 
     return mcp
 

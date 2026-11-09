@@ -147,6 +147,51 @@ def record_audit(db: Session, user_id: int | None, action: str, ok: bool) -> Non
     db.commit()
 
 
+PROFILE_FIELDS = ("likes", "dislikes", "dietary_notes", "goals")
+
+
+def get_profile(db: Session, user_id: int) -> dict:
+    profile = db.get(Profile, user_id)
+    return {f: getattr(profile, f) if profile else "" for f in PROFILE_FIELDS}
+
+
+def update_profile(db: Session, user_id: int, changes: dict) -> dict:
+    """Set only the fields given; leave the rest as they were."""
+    profile = db.get(Profile, user_id)
+    if profile is None:
+        profile = Profile(user_id=user_id, **{f: "" for f in PROFILE_FIELDS})
+        db.add(profile)
+    for field, value in changes.items():
+        if field in PROFILE_FIELDS and value is not None:
+            setattr(profile, field, value)
+    db.commit()
+    return get_profile(db, user_id)
+
+
+def save_training_week(db: Session, user_id: int, week_start, sessions: list) -> None:
+    week = db.scalar(
+        select(TrainingWeek).where(
+            TrainingWeek.user_id == user_id, TrainingWeek.week_start == week_start
+        )
+    )
+    if week is None:
+        db.add(TrainingWeek(user_id=user_id, week_start=week_start, sessions=sessions))
+    else:
+        week.sessions = sessions
+    db.commit()
+
+
+def get_training_week(db: Session, user_id: int, week_start=None) -> dict | None:
+    """The week starting on week_start, or the latest saved week if None."""
+    query = select(TrainingWeek).where(TrainingWeek.user_id == user_id)
+    if week_start is not None:
+        query = query.where(TrainingWeek.week_start == week_start)
+    week = db.scalar(query.order_by(TrainingWeek.week_start.desc()).limit(1))
+    if week is None:
+        return None
+    return {"week_start": week.week_start.isoformat(), "sessions": week.sessions}
+
+
 def delete_user_data(db: Session, user_id: int) -> None:
     """Remove every row belonging to this user, then the user."""
     for table in USER_TABLES:
