@@ -12,6 +12,14 @@ data to Claude. Built from scratch with a hand-rolled OAuth 2.1 gate.
 - **Railway service:** garmin_mcp
 - **Railway Volume mount path:** `/root/.local/share/cronometer-mcp`
 
+## Deploying Changes (read this every session)
+- Railway deploys **only from `main`** on GitHub. A change is not live until it is on `main`.
+- Sessions started from the phone/desktop app run on their own `claude/...` branch. When a code change is done
+  and tested, **always tell the user it isn't live yet and ask whether to merge it into `main` and push**.
+  Don't merge without asking.
+- After pushing to `main`, check the Railway deploy logs for the healthy startup lines below.
+- Garmin tokens now live on the Volume, so redeploys are safe and do not need a new Garmin token.
+
 ## Architecture
 - `src/garmin_mcp/__init__.py` — main entry point, wires everything together
 - `src/garmin_mcp/auth_server.py` — hand-built OAuth 2.1 gate (discovery, register, authorize, token)
