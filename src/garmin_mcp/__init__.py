@@ -280,16 +280,55 @@ def init_api(email, password):
 
 def _restore_tokens_from_env():
     """If GARMIN_TOKENS_B64 is set, unpack the saved token folder so the
-    server can log in without a terminal (needed when hosted on Railway)."""
+    server can log in without a terminal (needed when hosted on Railway).
+
+    Garmin rotates the refresh token every time the session refreshes, so the
+    blob in GARMIN_TOKENS_B64 goes stale while the server runs. The library
+    saves each rotated token back to the tokenstore, so the tokenstore lives on
+    the persistent Volume (CRONOMETER_DATA_DIR) and survives redeploys. The
+    env blob only replaces it when the blob itself changes (a freshly pasted
+    token)."""
+    import hashlib
     import io
+    import shutil
     import tarfile
+    import tempfile
+
+    global tokenstore
 
     blob = os.environ.get("GARMIN_TOKENS_B64")
     if not blob:
         return
+    data_dir = os.environ.get(
+        "CRONOMETER_DATA_DIR",
+        os.path.expanduser("~/.local/share/cronometer-mcp"),
+    )
+    if not os.getenv("GARMINTOKENS"):
+        tokenstore = os.path.join(data_dir, "garminconnect")
+    token_file = os.path.join(os.path.expanduser(tokenstore), "garmin_tokens.json")
+    marker = os.path.join(os.path.expanduser(tokenstore), ".env_blob_sha256")
+
+    blob_hash = hashlib.sha256(blob.encode()).hexdigest()
+    try:
+        with open(marker) as f:
+            saved_hash = f.read().strip()
+    except FileNotFoundError:
+        saved_hash = None
+    if os.path.exists(token_file) and saved_hash == blob_hash:
+        print(f"Using saved Garmin tokens from '{tokenstore}'.", file=sys.stderr)
+        return
+
     raw = base64.b64decode(blob)
-    with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
-        tar.extractall(path=os.path.expanduser("~"))
+    with tempfile.TemporaryDirectory() as tmp:
+        with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
+            tar.extractall(path=tmp, filter="data")
+        shutil.copytree(
+            os.path.join(tmp, ".garminconnect"),
+            os.path.expanduser(tokenstore),
+            dirs_exist_ok=True,
+        )
+    with open(marker, "w") as f:
+        f.write(blob_hash)
     print("Restored Garmin tokens from GARMIN_TOKENS_B64.", file=sys.stderr)
 
 

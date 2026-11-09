@@ -33,7 +33,7 @@ data to Claude. Built from scratch with a hand-rolled OAuth 2.1 gate.
 
 ## Healthy Startup Log (all 4 lines required)
 ```
-Restored Garmin tokens from GARMIN_TOKENS_B64.
+Restored Garmin tokens from GARMIN_TOKENS_B64.   (or: Using saved Garmin tokens from '...')
 Garmin Connect client initialized successfully.
 Cronometer client initialized successfully.
 Cronometer GWT client (macro tools) initialized successfully.
@@ -54,8 +54,10 @@ Tool filter: denylist of N tool(s).
 **Symptom:** `ERROR: OAuth tokens not found and no interactive terminal available`, followed by
 `Garmin tools disabled (Cronometer tools still available)`. The server stays up, but no Garmin tools show in Claude.
 The `Garmin token login failed: ...` line just above shows the underlying reason.
-**Note:** any redeploy (including a docs-only push to `main`) re-reads `GARMIN_TOKENS_B64`. A running container
-can keep working on refreshed tokens long after the env var blob has gone stale, so a redeploy can surface this.
+**Why it happened before:** Garmin rotates the refresh token on every refresh, so the `GARMIN_TOKENS_B64` blob goes
+stale while the server runs. The server now keeps the live tokens on the Volume
+(`/root/.local/share/cronometer-mcp/garminconnect`) and only replaces them when `GARMIN_TOKENS_B64` itself changes,
+so redeploys no longer break Garmin. Startup log shows `Using saved Garmin tokens from ...` in that case.
 **Fix:**
 ```bash
 # Step 1 — re-authenticate on Mac
