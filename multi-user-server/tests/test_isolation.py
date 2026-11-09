@@ -110,3 +110,16 @@ async def test_every_call_is_audited_by_user(server):
     with db.open_session() as s:
         rows = s.scalars(select(db.AuditLog).where(db.AuditLog.user_id == uid)).all()
     assert [(r.action, r.ok) for r in rows] == [("whoami", True)]
+
+
+# Claude reaches the server at its public address, not localhost.
+@pytest.mark.parametrize("host,expected", [("nutrition.example", 200), ("evil.example", 421)])
+async def test_public_address_is_accepted_and_others_refused(server, host, expected):
+    _, key = make_user("Alex")
+    body = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                       "clientInfo": {"name": "claude", "version": "1"}}}
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(f"{server}?key={key}", json=body, headers={
+            "Host": host, "Accept": "application/json, text/event-stream"})
+    assert resp.status_code == expected

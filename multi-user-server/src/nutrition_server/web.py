@@ -541,7 +541,12 @@ async def health(request: Request) -> Response:
     return Response("ok", media_type="text/plain")
 
 
+async def home(request: Request) -> Response:
+    return RedirectResponse("/connect" if _signed_in(request) else "/login", status_code=303)
+
+
 def install_routes(mcp) -> None:
+    mcp.custom_route("/", methods=["GET"])(home)
     mcp.custom_route("/health", methods=["GET"])(health)
     mcp.custom_route("/invite/{code}", methods=["GET", "POST"])(invite)
     mcp.custom_route("/login", methods=["GET", "POST"])(login)

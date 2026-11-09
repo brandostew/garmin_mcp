@@ -13,7 +13,10 @@ from datetime import date
 
 from pydantic import BaseModel, Field
 
+from urllib.parse import urlparse
+
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from nutrition_server import db
 from nutrition_server.auth import KeyAuthMiddleware, current_user
@@ -47,10 +50,24 @@ def _day(value: str | None) -> date:
     return date.fromisoformat(value) if value else date.today()
 
 
+def _transport_security() -> TransportSecuritySettings:
+    """Accept requests addressed to our public web address (and localhost
+    for local runs). Without this the MCP library only accepts localhost and
+    answers 421 to Claude."""
+    public = urlparse(os.environ.get("PUBLIC_URL", "http://localhost:8000"))
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[public.netloc, "127.0.0.1:*", "localhost:*"],
+        allowed_origins=[f"{public.scheme}://{public.netloc}", "https://claude.ai",
+                         "https://claude.com", "http://127.0.0.1:*", "http://localhost:*"],
+    )
+
+
 def build_mcp() -> FastMCP:
     # Stateless: every request stands alone, so nothing about one caller can
     # carry over to the next request.
-    mcp = FastMCP("Nutrition", stateless_http=True, json_response=True)
+    mcp = FastMCP("Nutrition", stateless_http=True, json_response=True,
+                  host="0.0.0.0", transport_security=_transport_security())
 
     @mcp.tool()
     def whoami(ctx: Context) -> str:
