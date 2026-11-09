@@ -1,3 +1,4 @@
+import os
 import socket
 import threading
 import time
@@ -8,16 +9,24 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from nutrition_server import db
-from nutrition_server.crypto import new_encryption_key
+from nutrition_server.crypto import new_encryption_secret
 from nutrition_server.security import hash_secret, new_user_key
 from nutrition_server.server import build_app
 
 
 @pytest.fixture
 def database(tmp_path, monkeypatch):
-    """A fresh, empty database file for each test."""
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
-    monkeypatch.setenv("ENCRYPTION_KEY", new_encryption_key())
+    """A fresh, empty database for each test: a SQLite file by default, or
+    the Postgres at TEST_DATABASE_URL (emptied first) when that is set."""
+    pg = os.environ.get("TEST_DATABASE_URL")
+    if pg:
+        monkeypatch.setenv("DATABASE_URL", pg)
+        engine = db._sessionmaker(db.database_url()).kw["bind"]
+        db.Base.metadata.drop_all(engine)
+        db.Base.metadata.create_all(engine)
+    else:
+        monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
+    monkeypatch.setenv("ENCRYPTION_SECRET", new_encryption_secret())
     monkeypatch.setenv("PUBLIC_URL", "https://nutrition.example")
     yield
 

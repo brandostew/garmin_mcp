@@ -20,7 +20,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from nutrition_server import db, sources
-from nutrition_server.crypto import seal, unseal
+from nutrition_server.crypto import encryption_secret, seal, unseal
 from nutrition_server.security import (
     hash_password,
     hash_secret,
@@ -76,7 +76,7 @@ def _public_url() -> str:
 
 
 def _csrf_secret() -> bytes:
-    return hashlib.sha256(b"csrf:" + os.environ["ENCRYPTION_KEY"].encode()).digest()
+    return hashlib.sha256(b"csrf:" + encryption_secret().encode()).digest()
 
 
 def _csrf_for(value: str) -> str:
@@ -489,7 +489,15 @@ async def connector_link(request: Request) -> Response:
     return _page("Your Claude connector", body)
 
 
+async def health(request: Request) -> Response:
+    """For Railway: the app is up and can reach its database."""
+    with db.open_session() as s:
+        s.scalar(select(func.count()).select_from(db.User))
+    return Response("ok", media_type="text/plain")
+
+
 def install_routes(mcp) -> None:
+    mcp.custom_route("/health", methods=["GET"])(health)
     mcp.custom_route("/invite/{code}", methods=["GET", "POST"])(invite)
     mcp.custom_route("/login", methods=["GET", "POST"])(login)
     mcp.custom_route("/logout", methods=["POST"])(logout)

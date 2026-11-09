@@ -122,7 +122,12 @@ USER_TABLES = [WebSession, PendingLogin, Credential, Profile, TrainingWeek, Audi
 
 
 def database_url() -> str:
-    return os.environ.get("DATABASE_URL", "sqlite:///nutrition.db")
+    url = os.environ.get("DATABASE_URL", "sqlite:///nutrition.db")
+    # Railway gives postgres:// or postgresql://; SQLAlchemy needs the driver named.
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
 
 
 @lru_cache
