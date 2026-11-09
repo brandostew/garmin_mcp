@@ -16,7 +16,12 @@ Garmin hands out a new refresh token each time it refreshes, so the client's
 current tokens are always handed back through `state` to be sealed again.
 """
 
+import base64
+import binascii
+import io
+import json
 import logging
+import tarfile
 import threading
 import time
 from datetime import date
@@ -140,10 +145,67 @@ class GarminConnector:
         with _paused_lock:
             _paused.pop(_pause_key(user_id, paused["handle"]), None)
 
+    paste_label = "Or paste a Garmin token made at home"
+    paste_help = ("On a Mac: garmin-mcp-auth --token-path ~/.garmin-mine --force-reauth, "
+                  "then: pbcopy < ~/.garmin-mine/garmin_tokens.json")
+
+    def import_tokens(self, text: str) -> Connected:
+        """Accept a token made on someone's own computer (the brief's fallback
+        for when Garmin blocks logins from Railway). Checked with a normal data
+        request, never a password login."""
+        tokens = _parse_pasted_tokens(text)
+        if tokens is None:
+            raise LoginFailed("That doesn't look like a Garmin token. Copy it again and paste "
+                              "the whole thing.")
+        source = GarminSource({"tokens": tokens})
+        try:
+            source._api()
+        except NeedsReconnect:
+            raise LoginFailed("Garmin didn't accept that token. Make a fresh one and try "
+                              "again.") from None
+        except (GarminConnectTooManyRequestsError, GarminConnectConnectionError,
+                requests.RequestException, OSError) as e:
+            log.warning("Garmin token check failed: %s", _why(e))
+            raise SourceBusy() from None
+        finally:
+            source.close()
+        log.info("Garmin token imported")
+        return Connected(source.state)
+
     def test(self, state: dict) -> tuple[str, dict]:
         source = GarminSource(state)
         activities = source.get_recent_activities(1)
         return f"Read your latest activities ({len(activities)} found).", source.state
+
+
+MAX_PASTE = 20_000
+
+
+def _parse_pasted_tokens(text: str) -> str | None:
+    """Either the garmin_tokens.json file itself, or the base64 bundle made by
+    `tar czf - -C ~ .garminconnect | base64`. Returns the token JSON text."""
+    text = (text or "").strip()
+    if not text or len(text) > MAX_PASTE:
+        return None
+    if not text.startswith("{"):
+        try:
+            raw = base64.b64decode(text, validate=False)
+            with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
+                member = next((m for m in tar.getmembers()
+                               if m.isfile() and m.name.endswith("garmin_tokens.json")
+                               and m.size < MAX_PASTE), None)
+                if member is None:
+                    return None
+                text = tar.extractfile(member).read().decode()
+        except (binascii.Error, tarfile.TarError, OSError, UnicodeDecodeError, EOFError):
+            return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not data.get("di_refresh_token"):
+        return None
+    return json.dumps({k: data.get(k) for k in ("di_token", "di_refresh_token", "di_client_id")})
 
 
 class GarminSource:
@@ -170,6 +232,10 @@ class GarminSource:
         garmin.display_name = profile.get("displayName")
         self._garmin = garmin
         return garmin
+
+    def close(self) -> None:
+        if self._garmin is not None:
+            self.state = {"tokens": self._garmin.client.dumps()}
 
     def _call(self, fn):
         try:

@@ -307,6 +307,14 @@ def _connect_page(me: _SignedIn, message: str = "", status: int = 200) -> Respon
             f"autocomplete='off' required>" for name, label, kind in connector.fields)
         inner += (f"<form method='post' action='/connect/{_e(source)}'>{_csrf_field(me.csrf)}"
                   f"{fields}<button>Connect</button></form>")
+        if hasattr(connector, "import_tokens"):
+            inner += (f"<form method='post' action='/connect/{_e(source)}/paste'>"
+                      f"{_csrf_field(me.csrf)}<label>{_e(connector.paste_label)}</label>"
+                      f"<p class='muted'>{_e(connector.paste_help)}</p>"
+                      f"<textarea name='tokens' rows='4' autocomplete='off' "
+                      f"style='width:100%;box-sizing:border-box;background:#0f1115;"
+                      f"color:#e8e8e8;border:1px solid #333;border-radius:8px'></textarea>"
+                      f"<button>Save token</button></form>")
         cards.append(f"<div class='card'><h2>{_e(connector.label)}</h2>{inner}</div>")
     body = (f"<p>Signed in as {_e(me.user.display_name)}.</p>"
             f"{f'<div class=card>{message}</div>' if message else ''}"
@@ -356,6 +364,40 @@ async def connect_source(request: Request) -> Response:
                 expires_at=db.utcnow() + PENDING_LIFETIME, tries_left=PENDING_TRIES))
             s.commit()
             return RedirectResponse(f"/connect/code/{pending_id}", status_code=303)
+        db.save_credential(s, me.user.id, source, result.state)
+    return _connect_page(me, f"<p class='ok'>{_e(connector.label)} connected.</p>")
+
+
+PASTES_PER_HOUR = 5
+
+
+async def connect_paste(request: Request) -> Response:
+    """Save a token made on the person's own computer (no password involved)."""
+    me = _signed_in(request)
+    if me is None:
+        return _to_signin()
+    source = request.path_params["source"]
+    if source not in sources.CONNECTORS:
+        return _page("Not found", "", 404)
+    connector = sources.CONNECTORS[source]()
+    form = await _form(request, me.csrf)
+    if form is None or not hasattr(connector, "import_tokens"):
+        return _connect_page(me, "<p class='err'>Form expired. Please try again.</p>", 400)
+    with db.open_session() as s:
+        since = db.utcnow() - timedelta(hours=1)
+        pastes = s.scalar(select(func.count()).select_from(db.AuditLog).where(
+            db.AuditLog.user_id == me.user.id, db.AuditLog.action == f"paste:{source}",
+            db.AuditLog.at >= since))
+        if pastes >= PASTES_PER_HOUR:
+            return _connect_page(me, "<p class='err'>Too many tries. Try again in an hour.</p>", 429)
+        db.record_audit(s, me.user.id, f"paste:{source}", True)
+        try:
+            result = connector.import_tokens(form.get("tokens", ""))
+        except sources.SourceBusy:
+            return _connect_page(me, f"<p class='err'>{_e(connector.label)} is busy. "
+                                 "Try again in an hour.</p>", 429)
+        except sources.LoginFailed as e:
+            return _connect_page(me, f"<p class='err'>{_e(e)}</p>", 400)
         db.save_credential(s, me.user.id, source, result.state)
     return _connect_page(me, f"<p class='ok'>{_e(connector.label)} connected.</p>")
 
@@ -508,4 +550,5 @@ def install_routes(mcp) -> None:
     mcp.custom_route("/connect/code/{pending_id}", methods=["GET", "POST"])(connect_code)
     mcp.custom_route("/connect/{source}", methods=["POST"])(connect_source)
     mcp.custom_route("/connect/{source}/test", methods=["POST"])(connect_test)
+    mcp.custom_route("/connect/{source}/paste", methods=["POST"])(connect_paste)
     mcp.custom_route("/connector", methods=["GET", "POST"])(connector_link)

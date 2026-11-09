@@ -265,3 +265,86 @@ def test_refusal_reason_is_logged_without_login_details(caplog, monkeypatch):
         GarminConnector().start(1, {"email": "alex@example.com", "password": ALEX_GARMIN_PW})
     assert "GarminConnectConnectionError" in caplog.text
     assert "alex@example.com" not in caplog.text and ALEX_GARMIN_PW not in caplog.text
+
+
+# ---- Pasting a token made at home (fallback when Garmin blocks Railway) --------
+
+
+def home_token(email):
+    """What `garmin-mcp-auth` leaves in garmin_tokens.json on someone's Mac."""
+    add_account(email, "pw", needs_code=False)
+    return json.dumps(fake_garmin._issue(email))
+
+
+class _Page:
+    def __init__(self, response):
+        import html
+        self.status_code = response.status_code
+        self.text = html.unescape(response.text)
+
+
+def paste(b, text):
+    page = b.get("/connect")
+    return _Page(b.post("/connect/garmin/paste", data={"csrf": csrf(page.text), "tokens": text}))
+
+
+def test_pasting_the_token_file_connects_without_any_login():
+    token = home_token("alex@example.com")
+    alex = onboard("Alex", "alex")
+    r = paste(alex, token)
+    assert "Garmin connected." in r.text
+    assert GARMIN_SERVER["login_requests"] == 0
+    assert set(stored("Alex")) == {"tokens"}
+
+
+def test_pasting_the_tar_bundle_also_works():
+    import base64, io, tarfile
+    token = home_token("alex@example.com").encode()
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        info = tarfile.TarInfo(".garminconnect/garmin_tokens.json")
+        info.size = len(token)
+        tar.addfile(info, io.BytesIO(token))
+    alex = onboard("Alex", "alex")
+    assert "Garmin connected." in paste(alex, base64.b64encode(buf.getvalue()).decode()).text
+
+
+def test_pasted_token_is_refreshed_and_the_old_one_retired():
+    token = home_token("alex@example.com")
+    alex = onboard("Alex", "alex")
+    paste(alex, token)
+    saved = json.loads(stored("Alex")["tokens"])
+    # The pasted refresh token was used once; the new one is what is stored.
+    assert saved["di_refresh_token"] == GARMIN_SERVER["valid_refresh"]["alex@example.com"]
+    assert saved["di_refresh_token"] != json.loads(token)["di_refresh_token"]
+
+
+@pytest.mark.parametrize("junk", ["", "hello", "{}", '{"di_token": "x"}', "H4sIAAAA", "{" * 30000])
+def test_junk_is_refused_with_a_clear_message(junk):
+    alex = onboard("Alex", "alex")
+    r = paste(alex, junk)
+    assert "doesn't look like a Garmin token" in r.text and stored("Alex") is None
+
+
+def test_expired_or_revoked_token_is_refused():
+    token = home_token("alex@example.com")
+    GARMIN_SERVER["valid_refresh"]["alex@example.com"] = "revoked"
+    alex = onboard("Alex", "alex")
+    assert "didn't accept that token" in paste(alex, token).text
+    assert stored("Alex") is None
+
+
+def test_paste_needs_sign_in_and_the_anti_forgery_token():
+    token = home_token("alex@example.com")
+    assert browser().post("/connect/garmin/paste", data={"tokens": token},
+                          follow_redirects=False).status_code == 303
+    alex = onboard("Alex", "alex")
+    r = alex.post("/connect/garmin/paste", data={"tokens": token})
+    assert "Form expired" in r.text and stored("Alex") is None
+
+
+def test_paste_box_shows_on_the_connect_page():
+    alex = onboard("Alex", "alex")
+    page = alex.get("/connect").text
+    assert "Or paste a Garmin token made at home" in page
+    assert "--token-path ~/.garmin-mine" in page
