@@ -51,7 +51,7 @@ class FakeCodeConnector:
     fields = [("email", "Email", "email"), ("password", "Password", "password")]
     contacts = 0  # how many times the "source" was contacted
 
-    def start(self, fields):
+    def start(self, user_id, fields):
         from nutrition_server.sources import LoginFailed, NeedsCode
         FakeCodeConnector.contacts += 1
         if fields["password"] != "right-password":
@@ -59,13 +59,16 @@ class FakeCodeConnector:
         return NeedsCode({"email": fields["email"], "ticket": "t-1"},
                          "Enter the code Fake Source sent you.")
 
-    def finish(self, paused, code):
+    def finish(self, user_id, paused, code):
         from nutrition_server.sources import Connected, WrongCode
         FakeCodeConnector.contacts += 1
         if code != "123456":
             raise WrongCode()
         # Note: no password kept, only a token.
         return Connected({"email": paused["email"], "token": "fake-token"})
+
+    def forget(self, user_id, paused):
+        pass
 
     def test(self, state):
         return "Fake test ok.", state

@@ -7,6 +7,7 @@ new session token). Nothing is shared between users or between requests.
 """
 
 import os
+import threading
 from contextlib import contextmanager
 
 from nutrition_server import db
@@ -58,8 +59,14 @@ def _cronometer_connector():
     return CronometerConnector()
 
 
+def _garmin_connector():
+    from nutrition_server.sources.garmin import GarminConnector
+
+    return GarminConnector()
+
+
 # Which connector handles each source on the Connect page. Tests swap in fakes.
-CONNECTORS = {"cronometer": _cronometer_connector}
+CONNECTORS = {"cronometer": _cronometer_connector, "garmin": _garmin_connector}
 
 
 def _cronometer_factory(state: dict):
@@ -68,20 +75,38 @@ def _cronometer_factory(state: dict):
     return CronometerSource(state)
 
 
+def _garmin_factory(state: dict):
+    from nutrition_server.sources.garmin import GarminSource
+
+    return GarminSource(state)
+
+
 # Which class serves each source. Tests swap in fakes here. This holds code,
 # never user data.
-FACTORIES = {"cronometer": _cronometer_factory}
+FACTORIES = {"cronometer": _cronometer_factory, "garmin": _garmin_factory}
+
+# One lock per (user, source), so two calls by the same person cannot both
+# refresh a token at once (Garmin's refresh tokens work only once). Keys
+# start with the user id; nothing else is stored.
+_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _lock_for(user_id: int, source: str) -> threading.Lock:
+    with _locks_guard:
+        return _locks.setdefault(f"{user_id}:{source}", threading.Lock())
 
 
 @contextmanager
 def connected(s, user: db.User, source: str):
-    state = db.get_credential(s, user.id, source)
-    if state is None:
-        raise NeedsReconnect(source)
-    client = FACTORIES[source](state)
-    try:
-        yield client
-    finally:
-        # Save refreshed tokens even if the call itself failed afterwards.
-        if client.state != state:
-            db.save_credential(s, user.id, source, client.state)
+    with _lock_for(user.id, source):
+        state = db.get_credential(s, user.id, source)
+        if state is None:
+            raise NeedsReconnect(source)
+        client = FACTORIES[source](state)
+        try:
+            yield client
+        finally:
+            # Save refreshed tokens even if the call itself failed afterwards.
+            if client.state != state:
+                db.save_credential(s, user.id, source, client.state)

@@ -339,7 +339,7 @@ async def connect_source(request: Request) -> Response:
         # counts. ok=True here means "attempt made", not "login worked".
         db.record_audit(s, me.user.id, f"connect:{source}", True)
         try:
-            result = connector.start(fields)
+            result = connector.start(me.user.id, fields)
         except sources.SourceBusy:
             return _connect_page(me, f"<p class='err'>{_e(connector.label)} is busy or "
                                  "blocked the login. Try again in an hour.</p>", 429)
@@ -395,9 +395,11 @@ async def connect_code(request: Request) -> Response:
                 pending.tries_left -= 1
                 s.commit()
                 try:
-                    result = connector.finish(saved["paused"], form.get("code", "").strip())
+                    result = connector.finish(me.user.id, saved["paused"],
+                                              form.get("code", "").strip())
                 except sources.WrongCode:
                     if pending.tries_left <= 0:
+                        connector.forget(me.user.id, saved["paused"])
                         s.delete(pending)
                         s.commit()
                         return _connect_page(me, "<p class='err'>Too many wrong codes. "

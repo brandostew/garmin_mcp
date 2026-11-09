@@ -165,7 +165,7 @@ class CronometerConnector:
     fields = [("email", "Cronometer email", "email"),
               ("password", "Cronometer password", "password")]
 
-    def start(self, fields: dict) -> Connected:
+    def start(self, user_id: int, fields: dict) -> Connected:
         state = {"email": fields["email"].strip(), "password": fields["password"]}
         source = CronometerSource(state)
         # A bare login call: the library does not retry it.
@@ -182,9 +182,12 @@ class CronometerConnector:
         source._sync_state()
         return Connected(source.state)
 
-    def finish(self, paused: dict, code: str) -> Connected:
+    def finish(self, user_id: int, paused: dict, code: str) -> Connected:
         # Cronometer two-factor is not supported yet (unverified, see brief 7).
         raise LoginFailed("Cronometer two-factor codes are not supported yet.")
+
+    def forget(self, user_id: int, paused: dict) -> None:
+        pass
 
     def test(self, state: dict) -> tuple[str, dict]:
         """Fetch yesterday's diary. Returns (summary, possibly refreshed state)."""

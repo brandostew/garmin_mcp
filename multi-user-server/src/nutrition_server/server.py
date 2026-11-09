@@ -128,6 +128,28 @@ def build_mcp() -> FastMCP:
             return (f"Set targets for {target_day.isoformat()}: {calories:g} kcal, "
                     f"{protein:g} g protein, {carbs:g} g carbs, {fat:g} g fat.")
 
+    @mcp.tool()
+    def get_recent_activities(ctx: Context, limit: int = 10) -> list:
+        """Get your most recent Garmin activities (newest first, up to 50)."""
+        with audited(ctx, "get_recent_activities") as user, db.open_session() as s:
+            with connected(s, user, "garmin") as garmin:
+                return garmin.get_recent_activities(max(1, min(limit, 50)))
+
+    @mcp.tool()
+    def get_sleep(ctx: Context, day: str | None = None) -> dict:
+        """Get your Garmin sleep data for the night ending on a date
+        (YYYY-MM-DD, default today)."""
+        with audited(ctx, "get_sleep") as user, db.open_session() as s:
+            with connected(s, user, "garmin") as garmin:
+                return garmin.get_sleep(_day(day))
+
+    @mcp.tool()
+    def get_training_readiness(ctx: Context, day: str | None = None) -> list | dict:
+        """Get your Garmin training readiness for a date (YYYY-MM-DD, default today)."""
+        with audited(ctx, "get_training_readiness") as user, db.open_session() as s:
+            with connected(s, user, "garmin") as garmin:
+                return garmin.get_training_readiness(_day(day))
+
     install_routes(mcp)
     return mcp
 

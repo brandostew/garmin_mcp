@@ -10,6 +10,7 @@ dependencies = [
     "cryptography>=43",
     "cronometer-api-mcp==0.1.7",
     "cronometer-mcp==2.0.3",
+    "garminconnect==0.3.2",
 ]
 
 [project.scripts]
