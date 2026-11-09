@@ -129,3 +129,30 @@ def test_still_expired_after_one_relogin_asks_to_reconnect():
     with pytest.raises(NeedsReconnect):
         source.get_daily_targets(DAY)
     assert stub.logins == 2  # the first login, plus one re-login. No loop.
+
+
+def test_refused_login_shows_cronometers_reason_but_never_the_email(caplog):
+    from nutrition_server.sources import LoginFailed
+    from nutrition_server.sources.cronometer import CronometerConnector
+
+    def handler(request):
+        return httpx.Response(200, json={"result": "FAIL", "error": "Invalid email or password",
+                                         "email": "alex@example.com"})
+
+    connector = CronometerConnector()
+    original = _Mobile.__init__
+
+    def patched(self, *a, **k):
+        original(self, *a, **k)
+        self._http = httpx.Client(base_url="https://mobile.cronometer.com",
+                                  transport=httpx.MockTransport(handler))
+
+    import pytest as _pytest
+    with _pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_Mobile, "__init__", patched)
+        with _pytest.raises(LoginFailed) as excinfo:
+            connector.start(1, {"email": "alex@example.com", "password": "secret-pw"})
+    message = str(excinfo.value)
+    assert 'Cronometer said: "Invalid email or password"' in message
+    assert "alex@example.com" not in message and "secret-pw" not in message
+    assert "secret-pw" not in caplog.text and "alex@example.com" not in caplog.text

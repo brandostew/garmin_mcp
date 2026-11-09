@@ -170,6 +170,9 @@ async def invite(request: Request) -> Response:
         inv = _valid_invite(s, code)
         name = inv.name if inv else None
     if name is None:
+        if _signed_in(request) is not None:
+            # e.g. the account was just created and the form was sent twice.
+            return RedirectResponse("/connect", status_code=303)
         return _page("Invite not valid", "<div class='card'>This invite link has expired "
                      "or was already used. Ask for a new one.</div>", 404)
     expected = _csrf_for("invite:" + code)

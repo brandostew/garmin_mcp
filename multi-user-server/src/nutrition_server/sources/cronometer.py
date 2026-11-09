@@ -15,6 +15,7 @@ Saved state (sealed in the credentials table):
 """
 
 import logging
+import re
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -24,6 +25,8 @@ from cronometer_api_mcp.client import CronometerClient as _MobileClient
 from cronometer_mcp import CronometerClient as _WebClient
 
 from nutrition_server.sources import Connected, LoginFailed, NeedsReconnect, SourceBusy
+
+log = logging.getLogger("nutrition_server")
 
 # The libraries log the login email and the start of the session token.
 for _name in ("cronometer_api_mcp", "cronometer_mcp"):
@@ -158,6 +161,13 @@ class CronometerSource:
         )
 
 
+def _cronometer_reason(error_text: str) -> str:
+    """Pull only Cronometer's own error wording out of a failed-login error.
+    The rest of that error (which can include the email) is never shown."""
+    match = re.search(r"'(?:error|message|reason)': '([^']{1,200})'", error_text)
+    return match.group(1) if match else ""
+
+
 class CronometerConnector:
     """Connect-page logic for Cronometer: one login attempt per click."""
 
@@ -177,7 +187,12 @@ class CronometerConnector:
             raise LoginFailed("Cronometer did not accept that email and password.") from None
         except Exception as e:
             if "Login failed" in str(e):
-                raise LoginFailed("Cronometer did not accept that email and password.") from None
+                reason = _cronometer_reason(str(e))
+                log.warning("Cronometer login refused: %s", reason or "no reason given")
+                message = "Cronometer did not accept that email and password."
+                if reason:
+                    message += f" Cronometer said: \"{reason}\""
+                raise LoginFailed(message) from None
             raise
         source._sync_state()
         return Connected(source.state)

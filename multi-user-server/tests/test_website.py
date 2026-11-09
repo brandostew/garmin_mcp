@@ -290,3 +290,13 @@ def test_logs_never_contain_passwords_codes_or_links(caplog):
     text = caplog.text
     for secret in (PASSWORD, FAKE_PASSWORD, "123456", key, "fake-token"):
         assert secret not in text
+
+
+def test_used_invite_while_signed_in_goes_to_connect():
+    code = admin.create_invite("Alex").rsplit("/", 1)[1]
+    b = browser()
+    form = {"csrf": csrf(b.get(f"/invite/{code}").text), "login_name": "alex",
+            "password": PASSWORD, "password2": PASSWORD}
+    b.post(f"/invite/{code}", data=form)
+    again = b.post(f"/invite/{code}", data=form)  # the double-submit
+    assert "Connect your apps" in again.text
