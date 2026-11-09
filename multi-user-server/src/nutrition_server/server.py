@@ -18,6 +18,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from nutrition_server import db
 from nutrition_server.auth import KeyAuthMiddleware, current_user
 from nutrition_server.sources import connected
+from nutrition_server.web import install_routes
 
 log = logging.getLogger("nutrition_server")
 
@@ -127,12 +128,54 @@ def build_mcp() -> FastMCP:
             return (f"Set targets for {target_day.isoformat()}: {calories:g} kcal, "
                     f"{protein:g} g protein, {carbs:g} g carbs, {fat:g} g fat.")
 
+    install_routes(mcp)
     return mcp
 
 
+_SECURITY_HEADERS = [
+    (b"strict-transport-security", b"max-age=31536000"),
+    (b"x-content-type-options", b"nosniff"),
+    (b"x-frame-options", b"DENY"),
+    # no-referrer: page addresses carry invite codes; never pass them on.
+    (b"referrer-policy", b"no-referrer"),
+    (b"content-security-policy",
+     b"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
+     b"frame-ancestors 'none'; base-uri 'none'"),
+    (b"cache-control", b"no-store"),
+]
+
+
+class SecurityMiddleware:
+    """HTTPS only (Railway reports the original scheme in X-Forwarded-Proto)
+    and standard security headers on every response."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers", []))
+        if headers.get(b"x-forwarded-proto") == b"http":
+            host = headers.get(b"host", b"").decode("latin-1")
+            await send({"type": "http.response.start", "status": 308,
+                        "headers": [(b"location", f"https://{host}{scope['path']}".encode())]})
+            await send({"type": "http.response.body", "body": b""})
+            return
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                message["headers"] = list(message.get("headers", [])) + _SECURITY_HEADERS
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
 def build_app():
-    """The full web app: the key check wrapped around the MCP endpoint."""
-    return KeyAuthMiddleware(build_mcp().streamable_http_app())
+    """The full web app: security headers, then the key check (which guards
+    only /mcp), then the MCP endpoint and the onboarding website."""
+    return SecurityMiddleware(KeyAuthMiddleware(build_mcp().streamable_http_app()))
 
 
 def main():

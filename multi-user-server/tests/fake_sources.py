@@ -42,3 +42,30 @@ class FakeCronometer:
 
 def add_fake_account(email: str, password: str, diary=None, targets=None):
     FAKE_ACCOUNTS[email] = {"password": password, "diary": diary or {}, "targets": targets or {}}
+
+
+class FakeCodeConnector:
+    """A pretend source that always demands a two-factor code (123456)."""
+
+    label = "Fake Source"
+    fields = [("email", "Email", "email"), ("password", "Password", "password")]
+    contacts = 0  # how many times the "source" was contacted
+
+    def start(self, fields):
+        from nutrition_server.sources import LoginFailed, NeedsCode
+        FakeCodeConnector.contacts += 1
+        if fields["password"] != "right-password":
+            raise LoginFailed("Fake Source did not accept that login.")
+        return NeedsCode({"email": fields["email"], "ticket": "t-1"},
+                         "Enter the code Fake Source sent you.")
+
+    def finish(self, paused, code):
+        from nutrition_server.sources import Connected, WrongCode
+        FakeCodeConnector.contacts += 1
+        if code != "123456":
+            raise WrongCode()
+        # Note: no password kept, only a token.
+        return Connected({"email": paused["email"], "token": "fake-token"})
+
+    def test(self, state):
+        return "Fake test ok.", state

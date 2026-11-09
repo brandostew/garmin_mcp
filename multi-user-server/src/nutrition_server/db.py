@@ -31,6 +31,11 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def as_utc(value: datetime) -> datetime:
+    """SQLite hands back times without a timezone; they are stored as UTC."""
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -39,6 +44,8 @@ class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     display_name: Mapped[str] = mapped_column(String(100))
+    # The name a person signs in to the website with (chosen on the invite page).
+    login_name: Mapped[str | None] = mapped_column(String(100), unique=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255))
     key_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -56,7 +63,7 @@ class Invite(Base):
 
 class WebSession(Base):
     __tablename__ = "web_sessions"
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # hash of the cookie
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -65,7 +72,7 @@ class PendingLogin(Base):
     __tablename__ = "pending_logins"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    session_id: Mapped[str] = mapped_column(String(64))
+    session_id: Mapped[str] = mapped_column(String(64))  # the web session that started it
     source: Mapped[str] = mapped_column(String(32))
     state: Mapped[bytes] = mapped_column(LargeBinary)  # encrypted
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

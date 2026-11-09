@@ -21,6 +21,47 @@ class NeedsReconnect(Exception):
         self.source = source
 
 
+# --- Connecting (used by the onboarding website) ---------------------------
+
+
+class Connected:
+    """Login finished. `state` is what gets sealed in the credentials table."""
+
+    def __init__(self, state: dict):
+        self.state = state
+
+
+class NeedsCode:
+    """The source wants a two-factor code. `paused` is sealed into
+    pending_logins until the person types the code."""
+
+    def __init__(self, paused: dict, prompt: str):
+        self.paused = paused
+        self.prompt = prompt
+
+
+class LoginFailed(Exception):
+    """Wrong email or password (shown to the person as-is)."""
+
+
+class WrongCode(Exception):
+    """The two-factor code was not accepted."""
+
+
+class SourceBusy(Exception):
+    """The source said 'too many requests' or blocked the login."""
+
+
+def _cronometer_connector():
+    from nutrition_server.sources.cronometer import CronometerConnector
+
+    return CronometerConnector()
+
+
+# Which connector handles each source on the Connect page. Tests swap in fakes.
+CONNECTORS = {"cronometer": _cronometer_connector}
+
+
 def _cronometer_factory(state: dict):
     from nutrition_server.sources.cronometer import CronometerSource
 

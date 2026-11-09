@@ -15,13 +15,15 @@ Saved state (sealed in the credentials table):
 """
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
+
+import httpx
 
 from cronometer_api_mcp.client import CronometerClient as _MobileClient
 from cronometer_mcp import CronometerClient as _WebClient
 
-from nutrition_server.sources import NeedsReconnect
+from nutrition_server.sources import Connected, LoginFailed, NeedsReconnect, SourceBusy
 
 # The libraries log the login email and the start of the session token.
 for _name in ("cronometer_api_mcp", "cronometer_mcp"):
@@ -154,3 +156,39 @@ class CronometerSource:
             day=day, protein_g=protein_g, fat_g=fat_g, carbs_g=carbs_g,
             calories=calories, template_name="Custom Targets",
         )
+
+
+class CronometerConnector:
+    """Connect-page logic for Cronometer: one login attempt per click."""
+
+    label = "Cronometer"
+    fields = [("email", "Cronometer email", "email"),
+              ("password", "Cronometer password", "password")]
+
+    def start(self, fields: dict) -> Connected:
+        state = {"email": fields["email"].strip(), "password": fields["password"]}
+        source = CronometerSource(state)
+        # A bare login call: the library does not retry it.
+        try:
+            source._mobile.login()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                raise SourceBusy() from None
+            raise LoginFailed("Cronometer did not accept that email and password.") from None
+        except Exception as e:
+            if "Login failed" in str(e):
+                raise LoginFailed("Cronometer did not accept that email and password.") from None
+            raise
+        source._sync_state()
+        return Connected(source.state)
+
+    def finish(self, paused: dict, code: str) -> Connected:
+        # Cronometer two-factor is not supported yet (unverified, see brief 7).
+        raise LoginFailed("Cronometer two-factor codes are not supported yet.")
+
+    def test(self, state: dict) -> tuple[str, dict]:
+        """Fetch yesterday's diary. Returns (summary, possibly refreshed state)."""
+        source = CronometerSource(state)
+        diary = source.get_diary(date.today() - timedelta(days=1))
+        entries = diary.get("diary", diary.get("entries", [])) if isinstance(diary, dict) else []
+        return f"Read yesterday's diary ({len(entries)} entries).", source.state
