@@ -55,6 +55,30 @@ def configure(client):
     _client = client
 
 
+def _relogin():
+    """Throw away the stale session (in memory and on the Volume) and log in
+    again from CRONOMETER_USERNAME/CRONOMETER_PASSWORD."""
+    global _client
+    _client._cookie_path.unlink(missing_ok=True)
+    client = CronometerClient()
+    client.authenticate()
+    _client = client
+    print("Cronometer GWT session expired; logged in again.", file=sys.stderr)
+
+
+def _call(method: str, *args, **kwargs):
+    """Call a GWT client method, re-logging in once if the session expired.
+    Cronometer ends GWT sessions every week or two; without this the only
+    fix was deleting the cookie file by hand and redeploying."""
+    try:
+        return getattr(_client, method)(*args, **kwargs)
+    except Exception as e:
+        if "NotLoggedIn" not in str(e):
+            raise
+    _relogin()
+    return getattr(_client, method)(*args, **kwargs)
+
+
 def _parse_day(day: str | None) -> _date:
     """Convert an optional 'YYYY-MM-DD' string into a date object."""
     return _date.fromisoformat(day) if day else _date.today()
@@ -70,19 +94,19 @@ def register_tools(app):
     def get_cronometer_daily_macro_targets(day: str | None = None) -> dict:
         """Get the macro targets (protein, fat, carbs, calories) for a specific
         date (YYYY-MM-DD, default today). Shows what template is applied."""
-        return _client.get_daily_macro_targets(_parse_day(day))
+        return _call("get_daily_macro_targets", _parse_day(day))
 
     @app.tool()
     def get_cronometer_macro_target_templates_gwt() -> list:
         """List all saved macro target templates (name, protein, fat, carbs,
         calories, template_id). Use template_id with save_macro_schedule."""
-        return _client.get_macro_target_templates()
+        return _call("get_macro_target_templates")
 
     @app.tool()
     def get_cronometer_weekly_macro_schedule() -> list:
         """Get the full weekly macro schedule showing which template is assigned
         to each day of the week (0=Sun through 6=Sat)."""
-        return _client.get_all_macro_schedules()
+        return _call("get_all_macro_schedules")
 
     # --- Writing -------------------------------------------------------
 
@@ -99,7 +123,8 @@ def register_tools(app):
         affecting the weekly schedule or any templates. Use this for
         one-off adjustments when a training day changes unexpectedly.
         Returns True on success."""
-        return _client.update_daily_targets(
+        return _call(
+            "update_daily_targets",
             day=_parse_day(day),
             protein_g=protein_g,
             fat_g=fat_g,
@@ -119,7 +144,8 @@ def register_tools(app):
         """Create (or overwrite) a named macro target template such as
         'Hard Training Day' or 'Rest Day'. Returns the template_id, which
         you can pass to assign_cronometer_weekly_macro_schedule."""
-        return _client.save_macro_target_template(
+        return _call(
+            "save_macro_target_template",
             template_name=template_name,
             protein_g=protein_g,
             fat_g=fat_g,
@@ -136,7 +162,8 @@ def register_tools(app):
         (0=Sunday, 1=Monday ... 6=Saturday). Use get_cronometer_weekly_macro_schedule
         to see current assignments and get_cronometer_macro_target_templates_gwt
         to find template_ids. Returns True on success."""
-        return _client.save_macro_schedule(
+        return _call(
+            "save_macro_schedule",
             day_of_week_us=day_of_week,
             template_id=template_id,
         )
@@ -146,6 +173,6 @@ def register_tools(app):
         """Delete a saved macro target template by its template_id.
         Get template_ids from get_cronometer_macro_target_templates_gwt.
         Returns True on success."""
-        return _client.delete_macro_target_template(template_id)
+        return _call("delete_macro_target_template", template_id)
 
     return app

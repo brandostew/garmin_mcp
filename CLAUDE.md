@@ -70,8 +70,10 @@ tar czf - -C ~ .garminconnect | base64 | tr -d '\n' | pbcopy
 **Frequency:** Every ~6 months (or sooner if Railway redeploys wipe it)
 
 ### 2. Cronometer GWT session expired
-**Symptom:** `GWT-RPC call failed... NotLoggedInException` when trying to update macro targets
-**Fix:**
+**Now self-healing:** the GWT tools catch `NotLoggedInException`, delete the stale cookie, log in again
+and retry once. The log shows `Cronometer GWT session expired; logged in again.` when this happens.
+**Symptom (if self-healing fails):** `GWT-RPC call failed... NotLoggedInException` when trying to update macro targets
+**Manual fix:**
 ```bash
 # Step 1 — clear stale cookie via Railway Console tab
 rm -f /root/.local/share/cronometer-mcp/.session_cookies
@@ -99,7 +101,7 @@ first (failure mode #1), then check if Cronometer GWT also needs a reset (#2).
 | Every | What expires | Fix |
 |---|---|---|
 | ~6 months | Garmin token | Failure mode #1 |
-| 1–2 weeks | Cronometer GWT session | Failure mode #2 |
+| 1–2 weeks | Cronometer GWT session | Automatic (manual fallback: failure mode #2) |
 | 30 days | Claude connector OAuth token | Failure mode #4 |
 
 ## Connecting Claude
@@ -130,8 +132,8 @@ first (failure mode #1), then check if Cronometer GWT also needs a reset (#2).
    Cookies persist on the Volume via `CRONOMETER_DATA_DIR`.
 6. **mcp pin** — mcp v2 renamed `FastMCP` → `MCPServer`; pinned `mcp>=1.23.0,<2.0.0`.
 7. **This playbook** (`CLAUDE.md`).
+8. **Resilience** — server stays up when Garmin login fails; GWT tools re-login automatically on `NotLoggedInException`.
 
 ## Planned
 - InBody scale integration (read-only, `rwestergren/inbody-api-mcp`)
 - Browser-based Garmin token refresh (removes the 6-month manual step)
-- Auto-reauthentication for the Cronometer GWT session
