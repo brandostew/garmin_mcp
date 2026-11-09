@@ -2,12 +2,14 @@
 name = "nutrition-server"
 version = "0.1.0"
 description = "Multi-user MCP server: each person's Cronometer and Garmin data, kept strictly separate"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "mcp>=1.23.0,<2.0.0",
     "uvicorn>=0.34",
     "sqlalchemy>=2.0",
     "cryptography>=43",
+    "cronometer-api-mcp==0.1.7",
+    "cronometer-mcp==2.0.3",
 ]
 
 [project.scripts]

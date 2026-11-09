@@ -8,6 +8,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from nutrition_server import db
+from nutrition_server.crypto import new_encryption_key
 from nutrition_server.security import hash_secret, new_user_key
 from nutrition_server.server import build_app
 
@@ -16,6 +17,8 @@ from nutrition_server.server import build_app
 def database(tmp_path, monkeypatch):
     """A fresh, empty database file for each test."""
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
+    monkeypatch.setenv("ENCRYPTION_KEY", new_encryption_key())
+    monkeypatch.setenv("PUBLIC_URL", "https://nutrition.example")
     yield
 
 

@@ -71,7 +71,8 @@ async def test_every_tool_returns_only_the_callers_data(server):
         async with ClientSession(r, w) as session:
             await session.initialize()
             tools = (await session.list_tools()).tools
-            sample_args = {"week_start": WEEK, "sessions": []}
+            sample_args = {"week_start": WEEK, "sessions": [], "day": WEEK,
+                           "calories": 2000, "protein": 150, "carbs": 200, "fat": 60}
             for tool in tools:
                 props = tool.inputSchema.get("properties", {})
                 required = tool.inputSchema.get("required", [])

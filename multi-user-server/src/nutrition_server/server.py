@@ -17,6 +17,7 @@ from mcp.server.fastmcp import Context, FastMCP
 
 from nutrition_server import db
 from nutrition_server.auth import KeyAuthMiddleware, current_user
+from nutrition_server.sources import connected
 
 log = logging.getLogger("nutrition_server")
 
@@ -39,6 +40,10 @@ def audited(ctx: Context, tool: str):
         with db.open_session() as s:
             db.record_audit(s, user.id, tool, ok)
         log.info("user=%s tool=%s ok=%s", user.id, tool, ok)
+
+
+def _day(value: str | None) -> date:
+    return date.fromisoformat(value) if value else date.today()
 
 
 def build_mcp() -> FastMCP:
@@ -93,6 +98,34 @@ def build_mcp() -> FastMCP:
             week = db.get_training_week(s, user.id, start)
             return week or {"week_start": None, "sessions": [],
                             "note": "No training week saved yet."}
+
+    @mcp.tool()
+    def get_food_diary(ctx: Context, day: str | None = None) -> dict:
+        """Get your Cronometer food diary for a date (YYYY-MM-DD, default today)."""
+        with audited(ctx, "get_food_diary") as user, db.open_session() as s:
+            with connected(s, user, "cronometer") as cronometer:
+                return cronometer.get_diary(_day(day))
+
+    @mcp.tool()
+    def get_daily_targets(ctx: Context, day: str | None = None) -> dict:
+        """Get your Cronometer macro targets (calories, protein, carbs, fat)
+        for a date (YYYY-MM-DD, default today)."""
+        with audited(ctx, "get_daily_targets") as user, db.open_session() as s:
+            with connected(s, user, "cronometer") as cronometer:
+                return cronometer.get_daily_targets(_day(day))
+
+    @mcp.tool()
+    def set_daily_targets(
+        ctx: Context, day: str, calories: float, protein: float, carbs: float, fat: float
+    ) -> str:
+        """Set your Cronometer macro targets for one date (YYYY-MM-DD).
+        protein, carbs and fat are in grams. Only that date changes."""
+        with audited(ctx, "set_daily_targets") as user, db.open_session() as s:
+            target_day = _day(day)
+            with connected(s, user, "cronometer") as cronometer:
+                cronometer.set_daily_targets(target_day, calories, protein, carbs, fat)
+            return (f"Set targets for {target_day.isoformat()}: {calories:g} kcal, "
+                    f"{protein:g} g protein, {carbs:g} g carbs, {fat:g} g fat.")
 
     return mcp
 

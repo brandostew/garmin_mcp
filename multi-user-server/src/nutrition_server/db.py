@@ -192,6 +192,31 @@ def get_training_week(db: Session, user_id: int, week_start=None) -> dict | None
     return {"week_start": week.week_start.isoformat(), "sessions": week.sessions}
 
 
+def get_credential(db: Session, user_id: int, source: str) -> dict | None:
+    """This user's saved connection to a source, unsealed. Only ever called
+    inside a request for that same user."""
+    from nutrition_server.crypto import unseal
+
+    row = db.scalar(
+        select(Credential).where(Credential.user_id == user_id, Credential.source == source)
+    )
+    return unseal(row.secret) if row else None
+
+
+def save_credential(db: Session, user_id: int, source: str, state: dict) -> None:
+    from nutrition_server.crypto import seal
+
+    row = db.scalar(
+        select(Credential).where(Credential.user_id == user_id, Credential.source == source)
+    )
+    if row is None:
+        db.add(Credential(user_id=user_id, source=source, secret=seal(state)))
+    else:
+        row.secret = seal(state)
+        row.updated_at = utcnow()
+    db.commit()
+
+
 def delete_user_data(db: Session, user_id: int) -> None:
     """Remove every row belonging to this user, then the user."""
     for table in USER_TABLES:
