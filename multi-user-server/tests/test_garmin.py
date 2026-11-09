@@ -249,3 +249,19 @@ def test_one_person_two_threads_take_turns_with_their_tokens(monkeypatch):
     for t in threads:
         t.join()
     assert inside["max"] == 1
+
+
+def test_refusal_reason_is_logged_without_login_details(caplog, monkeypatch):
+    import logging
+    from garminconnect import GarminConnectConnectionError
+    caplog.set_level(logging.DEBUG)
+
+    def blocked(self, sess, email, password):
+        raise GarminConnectConnectionError(f"Mobile login failed: {{'user': '{email}', 'pw': '{password}'}}")
+
+    monkeypatch.setattr(fake_garmin.FakeGarminClient, "_do_mobile_login", blocked)
+    from nutrition_server.sources import SourceBusy
+    with pytest.raises(SourceBusy):
+        GarminConnector().start(1, {"email": "alex@example.com", "password": ALEX_GARMIN_PW})
+    assert "GarminConnectConnectionError" in caplog.text
+    assert "alex@example.com" not in caplog.text and ALEX_GARMIN_PW not in caplog.text

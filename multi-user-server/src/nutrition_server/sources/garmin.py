@@ -43,8 +43,20 @@ from nutrition_server.sources import (
 if HAS_CFFI:
     from curl_cffi import requests as cffi_requests
 
+log = logging.getLogger("nutrition_server")
+
 # The library logs request details at debug level.
 logging.getLogger("garminconnect").setLevel(logging.WARNING)
+
+
+def _why(e: Exception, *secrets: str) -> str:
+    """A short description of why Garmin refused, for the log. The library's
+    messages can include Garmin's reply, so the login details are blanked."""
+    text = str(e)
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "[hidden]")
+    return f"{type(e).__name__}: {text[:160]}"
 
 PAUSE_SECONDS = 600
 
@@ -81,21 +93,26 @@ class GarminConnector:
     def start(self, user_id: int, fields: dict):
         _purge_expired()
         garmin = Garmin()
+        email, password = fields["email"].strip(), fields["password"]
         try:
-            garmin.client._do_mobile_login(
-                _login_session(), fields["email"].strip(), fields["password"])
+            garmin.client._do_mobile_login(_login_session(), email, password)
         except _MFARequired:
+            log.info("Garmin login needs a code")
             handle = new_session_id()
             with _paused_lock:
                 _paused[_pause_key(user_id, handle)] = (time.monotonic() + PAUSE_SECONDS, garmin)
             return NeedsCode({"handle": handle},
                              "Enter the code Garmin just sent you (by email or text).")
-        except GarminConnectTooManyRequestsError:
+        except GarminConnectTooManyRequestsError as e:
+            log.warning("Garmin login refused (rate limit): %s", _why(e, email, password))
             raise SourceBusy() from None
-        except GarminConnectAuthenticationError:
+        except GarminConnectAuthenticationError as e:
+            log.warning("Garmin login refused (credentials): %s", _why(e, email, password))
             raise LoginFailed("Garmin did not accept that email and password.") from None
-        except (GarminConnectConnectionError, requests.RequestException, OSError):
+        except (GarminConnectConnectionError, requests.RequestException, OSError) as e:
+            log.warning("Garmin login failed (connection/blocked): %s", _why(e, email, password))
             raise SourceBusy() from None
+        log.info("Garmin login succeeded without a code")
         return Connected({"tokens": garmin.client.dumps()})
 
     def finish(self, user_id: int, paused: dict, code: str) -> Connected:
