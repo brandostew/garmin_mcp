@@ -27,6 +27,9 @@ def encryption_secret() -> str:
     if len(secret) < MIN_SECRET_LENGTH:
         raise EncryptionNotConfigured(
             f"ENCRYPTION_SECRET must be set to at least {MIN_SECRET_LENGTH} random characters.")
+    if "${{" in secret or "secret(" in secret:
+        # A Railway template that was never filled in: well known, not secret.
+        raise EncryptionNotConfigured("ENCRYPTION_SECRET is an unresolved template.")
     return secret
 
 

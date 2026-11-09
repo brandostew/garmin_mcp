@@ -203,7 +203,10 @@ def build_app():
 def main():
     import uvicorn
 
+    from nutrition_server.crypto import encryption_secret
+
     logging.basicConfig(level=logging.INFO)
+    encryption_secret()  # refuse to start without a real secret
     # access_log=False: request lines can contain the connector key.
     uvicorn.run(
         build_app(),

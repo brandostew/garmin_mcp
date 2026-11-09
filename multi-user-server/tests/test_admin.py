@@ -61,3 +61,12 @@ def test_cli_delete_needs_confirmation(database, capsys):
     assert admin.main(["list-users"]) == 0
     assert "Alex" in capsys.readouterr().out
     assert admin.main(["delete-user", str(uid), "--yes"]) == 0
+
+
+def test_server_refuses_a_missing_or_template_secret(monkeypatch):
+    import pytest
+    from nutrition_server.crypto import EncryptionNotConfigured, encryption_secret
+    for bad in ("", "short", "${{secret(64)}}" + "x" * 40):
+        monkeypatch.setenv("ENCRYPTION_SECRET", bad)
+        with pytest.raises(EncryptionNotConfigured):
+            encryption_secret()
